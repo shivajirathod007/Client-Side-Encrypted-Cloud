@@ -138,21 +138,47 @@ app.get('/cloud/list', async (req, res) => {
     const response = await s3.send(command);
     console.log('[B2] Response (List):', JSON.stringify(response.Contents?.length || 0, null, 2));
 
+    // Helper to read stream
+    const streamToString = (stream) =>
+      new Promise((resolve, reject) => {
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("error", reject);
+        stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      });
+
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+
     // Map to simpler format and enrich with local metadata if available
     const files = await Promise.all((response.Contents || []).map(async (item) => {
       const filename = path.basename(item.Key);
       const localPath = path.join(MANIFEST_DIR, filename);
       let originalName = filename;
 
-      // Try to read local manifest to get real filename
+      // 1. Try local cache first
       if (await fs.pathExists(localPath)) {
         try {
           const manifest = await fs.readJson(localPath);
-          if (manifest.file_name) {
-            originalName = manifest.file_name;
-          }
+          if (manifest.file_name) originalName = manifest.file_name;
         } catch (e) {
           console.warn(`Failed to read local manifest: ${filename}`);
+        }
+      }
+      // 2. If not local, fetch from Cloud (B2) and restore cache
+      else {
+        try {
+          console.log(`[B2] Fetching missing manifest from cloud: ${item.Key}`);
+          const getCmd = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: item.Key });
+          const getRes = await s3.send(getCmd);
+          const bodyContents = await streamToString(getRes.Body);
+          const manifest = JSON.parse(bodyContents);
+
+          if (manifest.file_name) originalName = manifest.file_name;
+
+          // Restore to local cache for future speed
+          await fs.outputJson(localPath, manifest);
+        } catch (e) {
+          console.warn(`Failed to fetch/parse cloud manifest: ${filename}`, e.message);
         }
       }
 
