@@ -41,34 +41,80 @@ app.use((req, res, next) => {
   next();
 });
 
-// Manual Route for Manifests (Debug)
-app.get('/uploads/manifests/:filename', (req, res) => {
-  const filePath = path.join(MANIFEST_DIR, req.params.filename);
-  console.log(`[B2] Serving Manifest: ${filePath}`);
+// Helper to stream from S3 to local file
+async function downloadFromB2(key, localPath) {
+  const { GetObjectCommand } = require('@aws-sdk/client-s3');
+  try {
+    console.log(`[B2] Fetching from cloud: ${key}`);
+    const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+    const response = await s3.send(command);
+
+    // Ensure parent dir exists
+    await fs.ensureDir(path.dirname(localPath));
+
+    // Pipe to file
+    const writeStream = fs.createWriteStream(localPath);
+    return new Promise((resolve, reject) => {
+      response.Body.pipe(writeStream)
+        .on('error', reject)
+        .on('finish', resolve);
+    });
+  } catch (err) {
+    console.error(`[B2] Download Failed for ${key}:`, err.message);
+    throw err;
+  }
+}
+
+// Route for Manifests with B2 Fallback
+app.get('/uploads/manifests/:filename', async (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(MANIFEST_DIR, filename);
+
+  console.log(`[B2] Request Manifest: ${filename}`);
+
   if (fs.existsSync(filePath)) {
+    console.log(`[Cache] Hit: ${filename}`);
+    return res.sendFile(filePath);
+  }
+
+  console.log(`[Cache] Miss: ${filename}. Attempting B2 fetch...`);
+  try {
+    await downloadFromB2(`manifests/${filename}`, filePath);
+    console.log(`[Cache] Restored: ${filename}`);
     res.sendFile(filePath);
-  } else {
-    console.error(`[B2] Manifest Not Found: ${filePath}`);
-    res.status(404).send('File not found');
+  } catch (err) {
+    console.error(`[B2] Manifest Not Found: ${filename}`);
+    res.status(404).send('File not found in local cache or cloud.');
   }
 });
 
-// Manual Route for Chunks (Debug)
-app.get('/uploads/chunks/:filename', (req, res) => {
-  const filePath = path.join(UPLOAD_DIR, 'chunks', req.params.filename);
-  console.log(`[B2] Serving Chunk: ${filePath}`);
+// Route for Chunks with B2 Fallback
+app.get('/uploads/chunks/:filename', async (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(UPLOAD_DIR, 'chunks', filename);
+
+  console.log(`[B2] Request Chunk: ${filename}`);
+
   if (fs.existsSync(filePath)) {
+    console.log(`[Cache] Hit: ${filename}`);
+    return res.sendFile(filePath);
+  }
+
+  // Check alt path (root uploads) just in case
+  const altPath = path.join(UPLOAD_DIR, filename);
+  if (fs.existsSync(altPath)) {
+    console.log(`[Cache] Hit (Alt): ${filename}`);
+    return res.sendFile(altPath);
+  }
+
+  console.log(`[Cache] Miss: ${filename}. Attempting B2 fetch...`);
+  try {
+    await downloadFromB2(`chunks/${filename}`, filePath);
+    console.log(`[Cache] Restored: ${filename}`);
     res.sendFile(filePath);
-  } else {
-    // Try root uploads dir just in case
-    const altPath = path.join(UPLOAD_DIR, req.params.filename);
-    if (fs.existsSync(altPath)) {
-      console.log(`[B2] Serving Chunk (Alt): ${altPath}`);
-      res.sendFile(altPath);
-    } else {
-      console.error(`[B2] Chunk Not Found: ${filePath}`);
-      res.status(404).send('File not found');
-    }
+  } catch (err) {
+    console.error(`[B2] Chunk Not Found: ${filename}`);
+    res.status(404).send('File not found in local cache or cloud.');
   }
 });
 

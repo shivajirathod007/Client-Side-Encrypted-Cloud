@@ -1,11 +1,28 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios'); // Need to install axios or use fetch
+const axios = require('axios');
 const FormData = require('form-data');
+const crypto = require('crypto');
 
 // Mock CLI arguments: [node, script, command, file, chunk_size]
 const args = process.argv.slice(2);
 const command = args[0];
+
+// Helper to read passphrase from stdin
+async function readPassphrase() {
+    return new Promise((resolve) => {
+        let data = '';
+        const stdin = process.stdin;
+        if (stdin.isTTY) {
+            resolve('default_pass'); // Fallback if not piped
+            return;
+        }
+        stdin.setEncoding('utf8');
+        stdin.on('data', chunk => data += chunk);
+        stdin.on('end', () => resolve(data.trim()));
+        stdin.on('error', () => resolve('default_pass'));
+    });
+}
 
 if (command === 'backup') {
     const filePath = args[1];
@@ -17,6 +34,7 @@ if (command === 'backup') {
 } else if (command === 'restore') {
     const manifestPath = args[1];
     const outputDir = args[2];
+    // Note: server.js passes passphrase via stdin, not args
     runRestore(manifestPath, outputDir);
 } else {
     console.log("Usage: mock_cli <backup|verify|restore> <args>");
@@ -24,7 +42,8 @@ if (command === 'backup') {
 
 async function runBackup(filePath, chunkSizeMB) {
     console.log(`[MockCLI] Starting backup for: ${filePath}`);
-    console.log(`[MockCLI] Chunk size: ${chunkSizeMB} MB`);
+    const passphrase = await readPassphrase();
+    console.log(`[MockCLI] Using passphrase: ${'*'.repeat(passphrase.length)}`);
 
     if (!fs.existsSync(filePath)) {
         console.error(`[MockCLI] Error: File not found: ${filePath}`);
@@ -40,9 +59,14 @@ async function runBackup(filePath, chunkSizeMB) {
         console.log(`[MockCLI] File size: ${fileSize} bytes. Total chunks: ${totalChunks}`);
 
         const fileBuffer = fs.readFileSync(filePath);
+
+        // Simulate Key Derivation and Auth Tag
+        const mockAuthTag = crypto.createHash('sha256').update(passphrase).digest('hex');
+
         const manifest = {
             file_name: path.basename(filePath),
             version: 1,
+            mock_auth_tag: mockAuthTag, // Store hash for validation
             chunks: []
         };
 
@@ -55,21 +79,19 @@ async function runBackup(filePath, chunkSizeMB) {
 
             // Upload chunk
             const form = new FormData();
-            // Generate a random/encrypted filename for the cloud
             const obfuscatedName = `enc_${Date.now()}_${Math.random().toString(36).substring(7)}.bin`;
 
             form.append('chunk', chunkData, { filename: obfuscatedName });
 
-            // Assuming server is running on 3000
             await axios.post('http://localhost:3000/upload/chunk', form, {
                 headers: form.getHeaders()
             });
 
             manifest.chunks.push({
                 id: i,
-                hash: `mock_hash_${i}`, // Dummy hash
+                hash: `mock_hash_${i}`,
                 iv: `mock_iv_${i}`,
-                cloud_key: `chunks/${obfuscatedName}`, // Store the obfuscated key
+                cloud_key: `chunks/${obfuscatedName}`,
                 uri: `http://localhost:3000/uploads/chunks/${obfuscatedName}`
             });
         }
@@ -81,7 +103,7 @@ async function runBackup(filePath, chunkSizeMB) {
         console.log(`[MockCLI] Backup Complete!`);
         console.log(`[MockCLI] Manifest URL: ${res.data.url}`);
 
-        // Append to local ledger (simulated)
+        // Append to local ledger
         const ledgerPath = path.resolve(__dirname, '../data/ledger.json');
         let ledger = [];
         if (fs.existsSync(ledgerPath)) {
@@ -90,7 +112,6 @@ async function runBackup(filePath, chunkSizeMB) {
                 try {
                     ledger = JSON.parse(fileContent);
                 } catch (e) {
-                    console.warn("[MockCLI] Warning: Corrupted ledger, starting fresh.");
                     ledger = [];
                 }
             }
@@ -106,7 +127,7 @@ async function runBackup(filePath, chunkSizeMB) {
         });
         fs.writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2));
 
-        process.exit(0); // Success
+        process.exit(0);
 
     } catch (err) {
         console.error(`[MockCLI] Error: ${err.message}`);
@@ -116,18 +137,15 @@ async function runBackup(filePath, chunkSizeMB) {
 
 async function runVerify(manifestPath) {
     console.log(`[MockCLI] Verifying manifest: ${manifestPath}`);
-    console.log(`[MockCLI] Downloading manifest...`);
-    // Simulate verification
     setTimeout(() => {
-        console.log(`[MockCLI] Manifest verified.`);
-        console.log(`[MockCLI] Downloading chunks...`);
-        console.log(`[MockCLI] Recomputing Merkle Root...`);
-        console.log(`[MockCLI] SUCCESS: Backup verified successfully. Integrity Check Passed.`);
+        console.log(`[MockCLI] SUCCESS: Backup verified successfully.`);
     }, 1000);
 }
 
 async function runRestore(manifestPath, outputDir) {
     console.log(`[MockCLI] Restoring from manifest: ${manifestPath}`);
+    const passphrase = await readPassphrase();
+    console.log(`[MockCLI] Using passphrase: ${'*'.repeat(passphrase.length)}`);
 
     try {
         // 1. Fetch Manifest
@@ -135,39 +153,37 @@ async function runRestore(manifestPath, outputDir) {
         const manifestRes = await axios.get(manifestPath);
         const manifest = manifestRes.data;
 
+        // 2. Validate Passphrase (Mock)
+        if (manifest.mock_auth_tag) {
+            const inputHash = crypto.createHash('sha256').update(passphrase).digest('hex');
+            if (inputHash !== manifest.mock_auth_tag) {
+                throw new Error("Decryption failed: Invalid passphrase (Mock Validation)");
+            }
+            console.log("[MockCLI] Passphrase validated successfully.");
+        } else {
+            console.warn("[MockCLI] Warning: Old backup without auth tag. Skipping validation.");
+        }
+
         if (!manifest.chunks || !Array.isArray(manifest.chunks)) {
             throw new Error("Invalid manifest format: 'chunks' array missing.");
         }
 
         console.log(`[MockCLI] Found ${manifest.chunks.length} chunks for file: ${manifest.file_name}`);
 
-        // 2. Download Chunks
+        // 3. Download Chunks
         const chunkBuffers = [];
         for (const chunk of manifest.chunks) {
-            // Construct chunk URL. 
-            // manifest.chunks[i].cloud_key is like "chunks/enc_..."
-            // Server serves uploads at http://localhost:3000/uploads/
-            // So we need http://localhost:3000/uploads/chunks/enc_...
-            // But wait, server serves 'uploads' static folder. 
-            // If key is 'chunks/foo.bin', url is '.../uploads/chunks/foo.bin'
-
-            // We can use the 'uri' from manifest if it exists and is correct, 
-            // OR construct it from 'cloud_key' which is safer if URI is stale/local.
-            // Let's rely on the server proxy: http://localhost:3000/uploads/<cloud_key>
-
             const chunkUrl = `http://localhost:3000/uploads/${chunk.cloud_key}`;
-            console.log(`[MockCLI] Downloading chunk ${chunk.id + 1}/${manifest.chunks.length}: ${chunk.cloud_key}...`);
-
+            console.log(`[MockCLI] Downloading chunk ${chunk.id + 1}/${manifest.chunks.length}...`);
             const chunkRes = await axios.get(chunkUrl, { responseType: 'arraybuffer' });
             chunkBuffers.push(chunkRes.data);
         }
 
-        // 3. Reassemble
+        // 4. Reassemble
         console.log(`[MockCLI] Reassembling file...`);
         const fileBuffer = Buffer.concat(chunkBuffers);
 
-        // 4. Write to Disk
-        // Ensure output directory exists
+        // 5. Write to Disk
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
@@ -177,8 +193,6 @@ async function runRestore(manifestPath, outputDir) {
         fs.writeFileSync(restoredPath, fileBuffer);
 
         console.log(`[MockCLI] SUCCESS: File restored to ${restoredPath}`);
-        console.log(`[MockCLI] Original Size: ${fileBuffer.length} bytes`);
-
         process.exit(0);
 
     } catch (err) {

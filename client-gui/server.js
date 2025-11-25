@@ -52,12 +52,8 @@ app.post('/api/backup', (req, res) => {
     // Windows: (echo passphrase) | cli ...
 
     let cmd;
-    if (useMock) {
-        // Mock CLI doesn't take passphrase via stdin in this simple impl, but we pass it anyway for future proofing
-        cmd = `${cliPath} backup "${filePath}" ${chunkSize || 16}`;
-    } else {
-        cmd = `(echo ${passphrase}) | ${cliPath} backup "${filePath}" ${chunkSize || 16}`;
-    }
+    // Always pipe passphrase to CLI (Mock or Real)
+    cmd = `(echo ${passphrase}) | ${cliPath} backup "${filePath}" ${chunkSize || 16}`;
 
     console.log(`Executing: ${cmd}`);
 
@@ -165,11 +161,8 @@ app.post('/api/restore', (req, res) => {
     // Pass passphrase to CLI (Mock CLI will just log it for now)
     // In real CLI, we'd pipe it like backup
     let cmd;
-    if (useMock) {
-        cmd = `${cliPath} restore "${manifestPath}" "${targetDir}" "${passphrase}"`;
-    } else {
-        cmd = `(echo ${passphrase}) | ${cliPath} restore "${manifestPath}" "${targetDir}"`;
-    }
+    // Always pipe passphrase to CLI (Mock or Real)
+    cmd = `(echo ${passphrase}) | ${cliPath} restore "${manifestPath}" "${targetDir}"`;
 
     console.log(`Executing: ${cmd}`);
 

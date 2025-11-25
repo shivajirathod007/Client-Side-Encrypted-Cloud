@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { Upload, Cloud, Shield, FileText, Download } from 'lucide-react';
+import { ToastProvider } from './context/ToastContext';
 import BackupView from './components/BackupView';
 import DownloadView from './components/DownloadView';
 import LedgerView from './components/LedgerView';
 import CloudView from './components/CloudView';
 
-function App() {
+function AppContent() {
     const [activeTab, setActiveTab] = useState('backup');
 
     return (
@@ -13,27 +15,31 @@ function App() {
                 <h1>Secure Backup Client</h1>
                 <nav>
                     <button
-                        className={activeTab === 'backup' ? 'active' : ''}
+                        className={`nav-btn ${activeTab === 'backup' ? 'active' : ''}`}
                         onClick={() => setActiveTab('backup')}
                     >
+                        <Upload size={18} className="nav-icon" />
                         Backup
                     </button>
                     <button
-                        className={activeTab === 'download' ? 'active' : ''}
+                        className={`nav-btn ${activeTab === 'download' ? 'active' : ''}`}
                         onClick={() => setActiveTab('download')}
                     >
-                        Download Files
+                        <Download size={18} className="nav-icon" />
+                        Download
                     </button>
                     <button
-                        className={activeTab === 'cloud' ? 'active' : ''}
+                        className={`nav-btn ${activeTab === 'cloud' ? 'active' : ''}`}
                         onClick={() => setActiveTab('cloud')}
                     >
+                        <Cloud size={18} className="nav-icon" />
                         Cloud Admin
                     </button>
                     <button
-                        className={activeTab === 'ledger' ? 'active' : ''}
+                        className={`nav-btn ${activeTab === 'ledger' ? 'active' : ''}`}
                         onClick={() => setActiveTab('ledger')}
                     >
+                        <FileText size={18} className="nav-icon" />
                         Ledger
                     </button>
                 </nav>
@@ -48,6 +54,14 @@ function App() {
                 <p>Secure Client-Side Encryption System &copy; 2025</p>
             </footer>
         </div>
+    );
+}
+
+function App() {
+    return (
+        <ToastProvider>
+            <AppContent />
+        </ToastProvider>
     );
 }
 

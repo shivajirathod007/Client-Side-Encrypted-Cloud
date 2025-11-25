@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { FileText, Hash, Clock, Database } from 'lucide-react';
 
 function LedgerView() {
     const [ledger, setLedger] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/ledger')
+        fetch('http://localhost:4000/api/ledger')
             .then(res => res.json())
             .then(data => {
                 setLedger(data);
@@ -18,26 +19,31 @@ function LedgerView() {
     }, []);
 
     if (loading) return (
-        <div className="view-container" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <div className="view-container" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
             <div className="loading-bar"></div>
-            Loading ledger...
+            <p style={{ marginTop: '1rem' }}>Loading ledger...</p>
         </div>
     );
 
     return (
         <div className="view-container">
-            <h2>Local Audit Ledger</h2>
+            <div className="header-actions">
+                <h2><Database size={24} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.5rem' }} /> Local Audit Ledger</h2>
+            </div>
+
             <div className="file-list">
                 {ledger.length === 0 ? (
-                    <p className="empty-state">No entries found in the ledger.</p>
+                    <div className="empty-state" style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                        <p>No entries found in the ledger.</p>
+                    </div>
                 ) : (
                     <table>
                         <thead>
                             <tr>
-                                <th>Timestamp</th>
-                                <th>File Name</th>
-                                <th>Merkle Root</th>
-                                <th>Entry Hash</th>
+                                <th><Clock size={14} style={{ marginRight: '0.3rem' }} /> Timestamp</th>
+                                <th><FileText size={14} style={{ marginRight: '0.3rem' }} /> File Name</th>
+                                <th><Hash size={14} style={{ marginRight: '0.3rem' }} /> Merkle Root</th>
+                                <th><Hash size={14} style={{ marginRight: '0.3rem' }} /> Entry Hash</th>
                             </tr>
                         </thead>
                         <tbody>
