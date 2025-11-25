@@ -1,0 +1,45 @@
+# --- Node.js ---
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+dist/
+build/
+
+# --- Vite / React Client ---
+client-gui/node_modules/
+client-gui/dist/
+client-gui/.vite/
+
+# --- C++ build directories ---
+build/
+cmake-build-debug/
+cmake-build-release/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.o
+*.obj
+*.exe
+*.dll
+*.pdb
+*.lib
+*.a
+
+# --- Local data for your backup project ---
+data/chunks/
+data/metadata/
+data/ledger.json
+
+# Do NOT commit uploaded encrypted chunks
+server/uploads/*
+
+# --- OS / Dev junk ---
+.DS_Store
+Thumbs.db
+
+# --- Env / Secrets ---
+.env
+*.pem
+*.key
+config/*.json
